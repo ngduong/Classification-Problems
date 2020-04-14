@@ -1,8 +1,8 @@
 ---
 title: "Homework 3"
 author: "Ngoc Duong"
-date: "4/8/2020"
-output: github_document
+date: "4/14/2020"
+output: pdf_document
 editor_options: 
   chunk_output_type: console
 ---
@@ -22,16 +22,16 @@ library(ISLR)
 library(janitor)
 ```
 
-Import data from ISLR package
-```{r}
+
+```{r echo = FALSE}
+#Import data from ISLR package
 #call data and leave out variable "Today"
 data("Weekly") 
 weekly = Weekly %>% janitor::clean_names() %>% dplyr::select(-today) 
 ```
 
-
 ### a) Produce some graphical summaries of the data
-```{r}
+```{r echo = FALSE}
 theme1 <- transparentTheme(trans = .4)
 theme1$strip.background$col <- rgb(.0, .6, .2, .2) 
 trellis.par.set(theme1)
@@ -44,7 +44,9 @@ featurePlot(x = weekly[, 2:7],
             auto.key = list(columns = 2))
 ```
 
-### Perform logistic regression using full data 
+We can see the densities of the predictors do not differ much by the outcome, which indicate these predictors might not be useful for the classification task.
+
+### b) Perform logistic regression using full data 
 
 Fist, we divide the data up into a training and test set
 ```{r}
@@ -54,9 +56,9 @@ rowTrain <- createDataPartition(y = weekly$direction,
                                 list = FALSE)
 ```
 
-Next, we run a logistic regression on the training set using the five Lag variables and Volume as predictors, with Direction as a binary response.
+Next, we run a logistic regression on the training set using the five Lag variables and Volume as predictors, with Direction as the binary response.
 
-```{r}
+```{r warning = FALSE, message = FALSE}
 glm.fit <- glm(direction~lag1+lag2+lag3+lag4+lag5+volume, 
                data = weekly, 
                subset = rowTrain, 
@@ -65,14 +67,14 @@ glm.fit <- glm(direction~lag1+lag2+lag3+lag4+lag5+volume,
 broom::tidy(glm.fit) %>% knitr::kable()
 
 #check the levels of the outcome variable
-contrasts(weekly$direction)
+contrasts(weekly$direction) #1 represents upward trend, 0 downward trend
 ```
 
 The logistic regression result table shows that only the estimated effect of predictor lag1 is statistically significant at 5% significance level (p-value = 0.04).
 
 ### c) Compute the confusion matrix
 
-```{r}
+```{r warning = FALSE, message = FALSE}
 test.pred.prob <- predict(glm.fit, newdata = weekly[-rowTrain,],
                            type = "response")
 test.pred <- rep("Down", length(test.pred.prob))
@@ -84,32 +86,31 @@ confusionMatrix(data = as.factor(test.pred),
 ```
 
 Briefly explain the confusion matrix:
-  Reference
-Prediction Down  Up
-      Down   15  27
-      Up    106 124
       
-Accuracy : 0.511
-P-Value [Acc > NIR] : 0.9361
-Kappa : -0.0586    
-Sensitivity : 0.8212          
-Specificity : 0.1240          
-Pos Pred Value : 0.5391          
-Neg Pred Value : 0.3571
+Fraction of correct predictions is (15 + 124)/272 = 0.511 (also reported as "Accuracy")
+
+The Kappa value of -0.0586 (less than 0) indicates the "agreement" between the predicted and observed outcomes are approximately random/worse than random. 
+
+Sensitivity is 0.8212 means 82.12% of stocks with upward trend are correctly identified as "upward" by the model.
+Specificity is 0.124 means 12.4% of stocks with downward trend are correctly identified as "downward" by the model.
+
+PPV is 0.5391, which means 53.91% of the stocks actually demonstrate upward trend given they are predicted (by the model) to have upward trend.
+          
+NPV is 0.3571, which means 35.71% of the stocks actually demonstrate downwardward trend given they are predicted (by the model) to have downward trend.          
       
-### d) Plot the test ROC curve. 
-```{r}
+### d) Plot the test ROC curve
+```{r warning = FALSE, message = FALSE}
 roc.glm <- roc(weekly$direction[-rowTrain], test.pred.prob)
 plot(roc.glm, legacy.axes = TRUE, print.auc = TRUE)
 ```
 
-The AUC is 0.512, which is roughly the same as 0.5. This indicates the model has low predictive ability (almost similar to a random classifier).
+The AUC is 0.512, which is roughly the same as 0.5. This indicates the model has low discriminatory ability (only marginally better than a random classifier).
 
 ### e) Logistic regression with training data from 1990 to 2008
 
 For this model, we use Lag1 and Lag2 as the predictors 
 
-```{r}
+```{r warning = FALSE, message = FALSE}
 train_data = weekly %>% filter(year <= 2008)
 test_data = weekly %>% filter(year > 2008)
 
@@ -118,9 +119,9 @@ glm.train <- glm(direction~lag1+lag2,
                family = binomial)
 ```
 
-Plot the ROC curve
+Plot the ROC curve using the held-out data (data from 2009-2010)
 
-```{r}
+```{r warning = FALSE, message = FALSE}
 test.pred.prob.new <- predict(glm.train, newdata = test_data,
                            type = "response")
 test.pred.new <- rep("Down", length(test.pred.prob.new))
@@ -130,10 +131,9 @@ roc.new <- roc(test_data$direction, test.pred.prob.new)
 plot(roc.new, legacy.axes = TRUE, print.auc = TRUE)
 ```
 
-The AUC is 0.556.
+The AUC is 0.556, slightly better than the model above but still does not have good discriminatory ability.
 
-
-```{r results = 'hide'}
+```{r results = 'hide', warning = FALSE, message = FALSE}
 ctrl <- trainControl(method = "repeatedcv",
                      repeats = 5,
                      summaryFunction = twoClassSummary,
@@ -148,22 +148,20 @@ model.glmn <- train(x = train_data[,2:3],
                     tuneGrid = glmnGrid,
                     metric = "ROC",
                     trControl = ctrl)
-
-plot(model.glmn, xTrans = function(x) log(x))
 ```
 
 
 ### f) Use discriminant analysis -- LDA and QDA
 
-We can start with LDA first. We use the function `lda` in library `MASS` to conduct LDA.
+We can start with LDA first. We use the function "lda" in library "MASS" to perform LDA.
 
 ```{r}
 lda.fit <- lda(direction~lag1 + lag2, data = train_data)
 plot(lda.fit)
 ```
 
-Evaluate the test set performance using ROC.
-```{r}
+Evaluate the test set performance using ROC
+```{r warning = FALSE, message = FALSE}
 lda.pred <- predict(lda.fit, newdata = test_data)
 head(lda.pred$posterior)
 
@@ -173,8 +171,10 @@ roc.lda <- roc(test_data$direction, lda.pred$posterior[,2],
 plot(roc.lda, legacy.axes = TRUE, print.auc = TRUE)
 ```
 
-Using caret:
-```{r}
+The AUC of this LDA model is 0.557, very similar discriminatory ability to the logistic regression model.
+
+Using caret to find best LDA model (for comparison of tuned models later on)
+```{r warning = FALSE, message = FALSE}
 set.seed(7)
 model.lda <- train(x = train_data[,2:3],
                    y = train_data$direction,
@@ -183,15 +183,9 @@ model.lda <- train(x = train_data[,2:3],
                    trControl = ctrl)
 ```
 
-Evaluate the test set performance using ROC.
+Next, we fit a QDA model using function "qda"
 
-...
-...
-...
-
-Next, we fit a QDA model
-
-```{r}
+```{r warning = FALSE, message = FALSE}
 # use qda() in MASS
 qda.fit <- qda(direction~lag1+lag2, data = train_data)
 
@@ -203,8 +197,10 @@ roc.qda <- roc(test_data$direction, qda.pred$posterior[,2],
 plot(roc.qda, legacy.axes = TRUE, print.auc = TRUE)
 ```
 
-Using caret
-```{r}
+The AUC of this QDA model is 0.529, slightly lower discriminatory ability to the two models above.
+
+Using caret to find best QDA model (for comparisons later)
+```{r warning = FALSE, message = FALSE}
 set.seed(7)
 model.qda <- train(x = train_data[,2:3],
                    y = train_data$direction,
@@ -215,7 +211,7 @@ model.qda <- train(x = train_data[,2:3],
 
 ### g) Use K-nearest-neighbors
 
-```{r}
+```{r warning = FALSE, message = FALSE}
 set.seed(7)
 model.knn <- train(x = train_data[,2:3],
                    y = train_data$direction,
@@ -225,21 +221,29 @@ model.knn <- train(x = train_data[,2:3],
                    trControl = ctrl)
 
 ggplot(model.knn, highlight = TRUE)
+
+knn.pred <- predict(model.knn, newdata = test_data, type = "prob")[,2]
+roc.knn <- roc(test_data$direction, knn.pred, levels = c("Down", "Up"))
+plot(roc.knn, legacy.axes = TRUE, print.auc = TRUE)
 ```
+
+The AUC of this KNN model is 0.514, the lowest discriminatory ability of all four models looked at so far.
 
 ### Model comparisons
 
-
-```{r}
+```{r warning = FALSE, message = FALSE}
 res <- resamples(list(GLMNET = model.glmn, LDA = model.lda, 
                       QDA = model.qda, KNN = model.knn))
 summary(res)
 ```
 
+Comments: Cross-validation shows regularized logistic regression seems to perform best with ROC as the criteria (highest median and mean AUC at 0.5502 and 0.551, respectively) compared to the LDA, QDA, and KNN models. LDA model also does comparatively well (with second-highest median and mean AUC).
 
-Look at the test set performance for these models
+The regularized logistic and LDA model also have high median specificity (at 0.963 and 0.918 respectively), which might be helpful if investors aim to correctly avoid stocks that having a downward trend (with high accuracy). This, however, might lead to higher chance of false negatives, which might prevent investors from investing in stocks that demonstrate upward trend.
 
-```{r eval=FALSE}
+Next, we can pull all ROC curves together to look at the test set performance for these models
+
+```{r warning = FALSE, message = FALSE}
 glmn.pred <- predict(model.glmn, newdata = test_data, type = "prob")[,2]
 lda.pred <- predict(model.lda, newdata = test_data, type = "prob")[,2]
 qda.pred <- predict(model.qda, newdata = test_data, type = "prob")[,2]
@@ -253,7 +257,7 @@ roc.knn <- roc(test_data$direction, knn.pred)
 auc <- c(roc.glmn$auc[1], roc.lda$auc[1],
          roc.qda$auc[1], roc.knn$auc[1])
 
-plot(roc.glmn, col = 2, add = TRUE)
+plot(roc.glmn, col = 2)
 plot(roc.lda, col = 3, add = TRUE)
 plot(roc.qda, col = 4, add = TRUE)
 plot(roc.knn, col = 6, add = TRUE)
@@ -262,9 +266,6 @@ legend("bottomright", legend = paste0(modelNames, ": ", round(auc,3)),
        col = 1:4, lwd = 2)
 ```
 
-
-Comments: Regularized logistic regression seems to perform best with ROC as the criteria (highest median and mean AUC -- compared to the LDA, QDA, and KNN models -- at 0.5502 and 0.551, respectively). 
-
-The model also has highest median specificity at 0.963, which might be helpful if investors aim to correctly avoid stocks that having a downward trend (with high accuracy). Meanwhile, KNN model has the highest median sensitivity rate at 0.27, which can be chosen if investors are looking for stocks with upward trend to invest in. However, the rate is not so high, which may guard against false positives but otherwise would not be too beneficial. 
+A comparison of ROC curves of these different models on the held-out set consolidates the finding that QDA and KNN do not perform as well as regularized logistic regression and LDA, although they all don't have excellent discriminatory ability.
 
 
